@@ -62,3 +62,24 @@ async def test_orion_complete_task_command(client: AsyncClient, auth_headers: di
     tasks_res = await client.get("/api/tasks", headers=auth_headers)
     dsa_task = next(t for t in tasks_res.json() if "dsa" in t["title"].lower())
     assert dsa_task["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_orion_alarm_commands(client: AsyncClient, auth_headers: dict):
+    # Ask Orion to set alarm
+    chat_res = await client.post(
+        "/api/assistant/chat",
+        json={"message": "remind me in 5 minutes to drink water"},
+        headers=auth_headers,
+    )
+    assert chat_res.status_code == 200
+    assert "alarm armed" in chat_res.json()["reply"].lower()
+
+    # Ask Orion for next upcoming alarm
+    query_res = await client.post(
+        "/api/assistant/chat",
+        json={"message": "when is my next alarm"},
+        headers=auth_headers,
+    )
+    assert query_res.status_code == 200
+    assert "drink water" in query_res.json()["reply"].lower()
