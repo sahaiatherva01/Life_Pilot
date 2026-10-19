@@ -163,35 +163,61 @@ export const AlarmModal: React.FC<AlarmModalProps> = ({ alarm, onAction }) => {
             <span>Start Task Now</span>
           </button>
 
-          <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+          <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
             <button
               className="btn-secondary"
-              onClick={handleSnooze}
-              style={{
-                flex: 1,
-                padding: '12px',
-                fontSize: '0.9rem',
-                justifyContent: 'center',
+              onClick={() => {
+                sound.stopAlarmLoop();
+                sound.playClick();
+                onAction(alarm.id, 'snooze', 5);
               }}
+              style={{ flex: 1, padding: '10px 6px', fontSize: '0.8rem', justifyContent: 'center' }}
             >
-              <AlarmClockOff size={16} color="var(--neon-amber)" />
-              <span>Snooze 10m</span>
+              <AlarmClockOff size={14} color="var(--neon-amber)" />
+              <span>5m</span>
+            </button>
+
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                sound.stopAlarmLoop();
+                sound.playClick();
+                onAction(alarm.id, 'snooze', 10);
+              }}
+              style={{ flex: 1, padding: '10px 6px', fontSize: '0.8rem', justifyContent: 'center' }}
+            >
+              <AlarmClockOff size={14} color="var(--neon-amber)" />
+              <span>10m</span>
+            </button>
+
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                sound.stopAlarmLoop();
+                sound.playClick();
+                onAction(alarm.id, 'snooze', 15);
+              }}
+              style={{ flex: 1, padding: '10px 6px', fontSize: '0.8rem', justifyContent: 'center' }}
+            >
+              <AlarmClockOff size={14} color="var(--neon-amber)" />
+              <span>15m</span>
             </button>
 
             <button
               className="btn-secondary"
               onClick={handleComplete}
               style={{
-                flex: 1,
-                padding: '12px',
-                fontSize: '0.9rem',
+                flex: 1.5,
+                padding: '10px 8px',
+                fontSize: '0.85rem',
                 justifyContent: 'center',
                 borderColor: 'rgba(0, 245, 160, 0.4)',
                 color: 'var(--neon-emerald)',
+                fontWeight: 700,
               }}
             >
               <CheckCircle2 size={16} color="var(--neon-emerald)" />
-              <span>Mark Done</span>
+              <span>Complete</span>
             </button>
           </div>
         </div>

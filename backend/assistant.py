@@ -238,6 +238,46 @@ async def execute_tool_call(tool_name: str, args: dict, db: AsyncSession) -> Tup
         text = f"You have {len(tasks)} tasks today ({completed} completed):\n" + "\n".join(summary_lines)
         return text, {"tool": "get_daily_summary", "count": len(tasks), "completed": completed}
 
+    elif tool_name == "set_quick_alarm":
+        title = args.get("title", "Quick Task")
+        mins = int(args.get("minutes_from_now", 5))
+        now = datetime.now()
+        trigger_dt = now + timedelta(minutes=mins)
+        sh_str = trigger_dt.strftime("%H:%M")
+        end_dt = trigger_dt + timedelta(minutes=30)
+        eh_str = end_dt.strftime("%H:%M")
+
+        task = Task(
+            title=title,
+            description=f"Quick To-Do Alarm ({mins}m timer)",
+            category="Routine",
+            date=trigger_dt.date(),
+            start_time=sh_str,
+            end_time=eh_str,
+            duration_minutes=30,
+            status="pending",
+            priority="high",
+            subtasks=[],
+            is_reminder_enabled=True,
+        )
+        db.add(task)
+        await db.flush()
+
+        reminder = Reminder(
+            task_id=task.id,
+            trigger_time=trigger_dt,
+            repeat_interval_minutes=5,
+            status="pending",
+        )
+        db.add(reminder)
+        await db.commit()
+        return f"Alarm armed! I will alert you at {sh_str} ({mins} mins from now) for '{title}'.", {
+            "tool": "set_quick_alarm",
+            "task_id": task.id,
+            "title": title,
+            "alarm_time": sh_str,
+        }
+
     return "Command recognized but no handler found.", {}
 
 
@@ -288,6 +328,13 @@ def heuristic_intent_parser(prompt: str) -> Optional[Tuple[str, dict]]:
     if m_del:
         task_name = m_del.group(1).strip()
         return "delete_task", {"task_title": task_name}
+
+    # Quick alarm intent: 'alarm in 5 mins to workout' or 'remind me in 10 minutes to drink water'
+    m_alarm = re.search(r"(?:set\s+)?(?:alarm|remind\s+me)\s+(?:in\s+)?(\d+)\s*(?:m|min|mins|minutes)\s+(?:to|for)\s+([a-zA-Z\s0-9]+)", clean)
+    if m_alarm:
+        minutes = int(m_alarm.group(1))
+        task_name = m_alarm.group(2).strip()
+        return "set_quick_alarm", {"title": task_name, "minutes_from_now": minutes}
 
     # Summary intent
     if any(k in clean for k in ["summary", "schedule", "aaj kya hai", "what do i have", "routine today", "plan today"]):

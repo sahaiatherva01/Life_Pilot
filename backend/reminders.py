@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -38,6 +39,11 @@ async def check_due_reminders():
             reminders = result.scalars().all()
 
             for r in reminders:
+                # If associated task is already completed or cancelled, do not fire
+                if r.task and r.task.status in ["completed", "cancelled"]:
+                    r.status = "completed"
+                    continue
+
                 should_fire = False
                 if r.status == "pending" and r.trigger_time <= now:
                     should_fire = True
@@ -277,3 +283,91 @@ async def force_trigger_briefing(
     else:
         await trigger_night_briefing(db)
     return {"status": "success", "message": f"{briefing_type.capitalize()} briefing triggered successfully"}
+
+
+class QuickAlarmRequest(BaseModel):
+    title: str
+    minutes_from_now: int = 5
+    category: str = "Routine"
+
+
+@router.post("/quick")
+async def create_quick_alarm(
+    req: QuickAlarmRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Creates a quick To-Do task with an alarm scheduled X minutes from now."""
+    now = datetime.now()
+    trigger_dt = now + timedelta(minutes=req.minutes_from_now)
+    sh_str = trigger_dt.strftime("%H:%M")
+    end_dt = trigger_dt + timedelta(minutes=30)
+    eh_str = end_dt.strftime("%H:%M")
+
+    task = Task(
+        title=req.title,
+        description=f"Quick To-Do Alarm ({req.minutes_from_now}m timer)",
+        category=req.category,
+        date=trigger_dt.date(),
+        start_time=sh_str,
+        end_time=eh_str,
+        duration_minutes=30,
+        status="pending",
+        priority="high",
+        subtasks=[],
+        is_reminder_enabled=True,
+    )
+    db.add(task)
+    await db.flush()
+
+    reminder = Reminder(
+        task_id=task.id,
+        trigger_time=trigger_dt,
+        repeat_interval_minutes=5,
+        status="pending",
+    )
+    db.add(reminder)
+    await db.commit()
+    await db.refresh(task)
+    return {
+        "status": "success",
+        "task_id": task.id,
+        "title": task.title,
+        "trigger_time": trigger_dt.isoformat(),
+        "start_time": sh_str,
+        "message": f"Alarm set for {sh_str} ({req.minutes_from_now} minutes from now).",
+    }
+
+
+@router.get("/upcoming")
+async def get_next_upcoming_alarm(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns the next scheduled alarm countdown details."""
+    now = datetime.now()
+    stmt = (
+        select(Reminder)
+        .options(selectinload(Reminder.task))
+        .where(
+            Reminder.status.in_(["pending", "snoozed"]),
+            Reminder.trigger_time >= now - timedelta(minutes=1),
+        )
+        .order_by(Reminder.trigger_time.asc())
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    next_reminder = result.scalars().first()
+    if not next_reminder or not next_reminder.task:
+        return None
+
+    diff_seconds = max(0, int((next_reminder.trigger_time - now).total_seconds()))
+    return {
+        "id": next_reminder.id,
+        "task_id": next_reminder.task_id,
+        "task_title": next_reminder.task.title,
+        "task_category": next_reminder.task.category,
+        "trigger_time": next_reminder.trigger_time.isoformat(),
+        "seconds_remaining": diff_seconds,
+        "minutes_remaining": max(1, round(diff_seconds / 60)),
+    }

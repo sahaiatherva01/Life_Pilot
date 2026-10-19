@@ -205,6 +205,25 @@ export const api = {
     });
   },
 
+  async createQuickAlarm(title: string, minutesFromNow: number = 5, category: string = 'Routine'): Promise<any> {
+    return request('/api/reminders/quick', {
+      method: 'POST',
+      body: JSON.stringify({ title, minutes_from_now: minutesFromNow, category }),
+    });
+  },
+
+  async getUpcomingAlarm(): Promise<{
+    id: string;
+    task_id: string;
+    task_title: string;
+    task_category: string;
+    trigger_time: string;
+    seconds_remaining: number;
+    minutes_remaining: number;
+  } | null> {
+    return request('/api/reminders/upcoming');
+  },
+
   async getLatestBriefing(type?: string): Promise<DailyBriefing | null> {
     const params = type ? `?briefing_type=${type}` : '';
     return request<DailyBriefing | null>(`/api/reminders/briefings/latest${params}`);

@@ -22,6 +22,10 @@ interface TopNavProps {
   onLock: () => void;
   backendOnline: boolean;
   activeAlarmCount: number;
+  upcomingAlarm?: { task_title: string; trigger_time: string; minutes_remaining: number } | null;
+  onTestAlarm?: () => void;
+  notificationPermission?: NotificationPermission;
+  onRequestNotificationPermission?: () => void;
 }
 
 export const TopNav: React.FC<TopNavProps> = ({
@@ -33,6 +37,10 @@ export const TopNav: React.FC<TopNavProps> = ({
   onLock,
   backendOnline,
   activeAlarmCount,
+  upcomingAlarm,
+  onTestAlarm,
+  notificationPermission,
+  onRequestNotificationPermission,
 }) => {
   const [timeStr, setTimeStr] = useState<string>('');
 
