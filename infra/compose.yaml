@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lifepilot_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lifepilot
+      POSTGRES_PASSWORD: lifepilot_secret
+      POSTGRES_DB: lifepilot
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lifepilot -d lifepilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: lifepilot_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    container_name: lifepilot_server
+    restart: unless-stopped
+    environment:
+      - APP_ENV=development
+      - TIMEZONE=Asia/Kolkata
+      - DATABASE_URL=postgresql+asyncpg://lifepilot:lifepilot_secret@postgres:5432/lifepilot
+      - DATABASE_URL_SYNC=postgresql+psycopg2://lifepilot:lifepilot_secret@postgres:5432/lifepilot
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=lifepilot-insecure-development-secret-key-change-in-production-12345
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../server:/app/server
+      - ../migrations:/app/migrations
+      - ../docs:/app/docs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
