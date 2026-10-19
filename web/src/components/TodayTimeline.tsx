@@ -12,7 +12,9 @@ import {
   Flame, 
   Sparkles,
   Layers,
-  ArrowRight
+  ArrowRight,
+  BellRing,
+  Timer
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Category, SubtaskItem, Task, TaskStatus } from '../types';
@@ -28,6 +30,7 @@ interface TodayTimelineProps {
   onCreateTask: (task: Partial<Task>) => void;
   onOpenImport: () => void;
   onToggleSubtask: (taskId: string, subtaskIndex: number) => void;
+  onQuickAlarm: (title: string, minutes: number) => void;
 }
 
 const CATEGORY_COLORS: Record<Category, string> = {
@@ -50,9 +53,13 @@ export const TodayTimeline: React.FC<TodayTimelineProps> = ({
   onCreateTask,
   onOpenImport,
   onToggleSubtask,
+  onQuickAlarm,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showQuickAlarmModal, setShowQuickAlarmModal] = useState(false);
+  const [quickAlarmTitle, setQuickAlarmTitle] = useState('');
+  const [quickAlarmMinutes, setQuickAlarmMinutes] = useState(5);
   const [rescheduleTask, setRescheduleTask] = useState<Task | null>(null);
   const [newStart, setNewStart] = useState('');
   const [newEnd, setNewEnd] = useState('');
@@ -217,6 +224,20 @@ export const TodayTimeline: React.FC<TodayTimelineProps> = ({
           >
             <Sparkles size={16} color="var(--neon-cyan)" />
             <span>Import Guide.xlsx</span>
+          </button>
+
+          <button
+            className="btn-secondary"
+            onClick={() => { sound.playClick(); setShowQuickAlarmModal(true); }}
+            style={{
+              fontSize: '0.85rem',
+              borderColor: 'rgba(255, 159, 67, 0.4)',
+              background: 'rgba(255, 159, 67, 0.08)',
+              color: 'var(--neon-amber)',
+            }}
+          >
+            <BellRing size={15} color="var(--neon-amber)" />
+            <span>Quick Alarm</span>
           </button>
 
           <button
@@ -393,6 +414,24 @@ export const TodayTimeline: React.FC<TodayTimelineProps> = ({
                         border: '1px solid var(--neon-cyan)',
                       }}>
                         IN PROGRESS
+                      </span>
+                    )}
+
+                    {task.is_reminder_enabled && !isCompleted && (
+                      <span style={{
+                        background: 'rgba(0, 242, 254, 0.08)',
+                        border: '1px solid rgba(0, 242, 254, 0.25)',
+                        color: 'var(--neon-cyan)',
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-full)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}>
+                        <BellRing size={10} />
+                        <span>Alarm Armed</span>
                       </span>
                     )}
 
@@ -746,6 +785,120 @@ export const TodayTimeline: React.FC<TodayTimelineProps> = ({
                   type="button" 
                   className="btn-secondary" 
                   onClick={() => setRescheduleTask(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Alarm / To-Do Modal */}
+      {showQuickAlarmModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 200,
+          background: 'rgba(0, 0, 0, 0.8)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px',
+        }}>
+          <div className="glass-panel" style={{
+            width: '100%',
+            maxWidth: '440px',
+            padding: '26px',
+            borderRadius: 'var(--radius-lg)',
+            background: 'var(--bg-secondary)',
+            border: '1px solid rgba(255, 159, 67, 0.4)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <BellRing size={20} color="var(--neon-amber)" />
+              <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', fontWeight: 800 }}>
+                Set Quick To-Do Alarm
+              </h3>
+            </div>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '18px' }}>
+              Arms a persistent alarm that will ring X minutes from now until you start or complete it.
+            </p>
+
+            <form onSubmit={e => {
+              e.preventDefault();
+              if (!quickAlarmTitle.trim()) return;
+              onQuickAlarm(quickAlarmTitle.trim(), quickAlarmMinutes);
+              setQuickAlarmTitle('');
+              setShowQuickAlarmModal(false);
+            }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  What do you need to do?
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Drink water, Check DSA test, Stretch"
+                  value={quickAlarmTitle}
+                  onChange={e => setQuickAlarmTitle(e.target.value)}
+                  autoFocus
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'rgba(0,0,0,0.5)',
+                    color: 'var(--text-primary)',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '8px' }}>
+                  Ring Alarm In:
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
+                  {[2, 5, 10, 15, 30].map(mins => (
+                    <button
+                      key={mins}
+                      type="button"
+                      onClick={() => { sound.playClick(); setQuickAlarmMinutes(mins); }}
+                      style={{
+                        padding: '8px 4px',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        border: quickAlarmMinutes === mins ? '1px solid var(--neon-amber)' : '1px solid var(--border-subtle)',
+                        background: quickAlarmMinutes === mins ? 'rgba(255, 159, 67, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                        color: quickAlarmMinutes === mins ? 'var(--neon-amber)' : 'var(--text-secondary)',
+                      }}
+                    >
+                      {mins}m
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button 
+                  type="submit" 
+                  className="btn-primary" 
+                  style={{
+                    flex: 1,
+                    background: 'linear-gradient(135deg, #FF9F43 0%, #FF5252 100%)',
+                    boxShadow: '0 0 20px rgba(255, 159, 67, 0.3)',
+                    color: '#05070B',
+                  }}
+                >
+                  <BellRing size={16} />
+                  <span>Arm Alarm ({quickAlarmMinutes}m)</span>
+                </button>
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  onClick={() => setShowQuickAlarmModal(false)}
                 >
                   Cancel
                 </button>

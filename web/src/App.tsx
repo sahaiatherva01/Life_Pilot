@@ -21,6 +21,10 @@ export const App: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [backendOnline, setBackendOnline] = useState<boolean>(true);
   const [activeAlarms, setActiveAlarms] = useState<Reminder[]>([]);
+  const [upcomingAlarm, setUpcomingAlarm] = useState<any>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
+    typeof Notification !== 'undefined' ? Notification.permission : 'default'
+  );
 
   // Modals state
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -51,19 +55,32 @@ export const App: React.FC = () => {
     if (!isUnlocked) return;
     loadDaySchedule(currentDate);
 
-    // Poll active alarms every 10 seconds
+    // Poll active alarms and upcoming alarms every 8 seconds
     const pollAlarms = async () => {
       try {
-        const alarms = await api.getActiveAlarms();
+        const [alarms, upcoming] = await Promise.all([
+          api.getActiveAlarms(),
+          api.getUpcomingAlarm(),
+        ]);
         setActiveAlarms(alarms);
+        setUpcomingAlarm(upcoming);
         setBackendOnline(true);
+
+        // If an alarm just fired and browser notifications are enabled, trigger system alert
+        if (alarms.length > 0 && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          const first = alarms[0];
+          new Notification(`⏰ LifePilot Alarm: ${first.task_title}`, {
+            body: `Scheduled block is due now (${first.task_category}). Tap to open LifePilot.`,
+            icon: '/favicon.svg',
+          });
+        }
       } catch (e) {
         setBackendOnline(false);
       }
     };
 
     pollAlarms();
-    const interval = setInterval(pollAlarms, 10000);
+    const interval = setInterval(pollAlarms, 8000);
     return () => clearInterval(interval);
   }, [isUnlocked, currentDate]);
 
@@ -81,6 +98,10 @@ export const App: React.FC = () => {
     try {
       await api.login(pin);
       setIsUnlocked(true);
+      // Request desktop notifications upon login
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+        Notification.requestPermission().then(perm => setNotificationPermission(perm));
+      }
       return true;
     } catch (e) {
       return false;
@@ -90,6 +111,19 @@ export const App: React.FC = () => {
   const handleLock = () => {
     clearAuthToken();
     setIsUnlocked(false);
+  };
+
+  const handleRequestNotificationPermission = () => {
+    if (typeof Notification !== 'undefined') {
+      Notification.requestPermission().then(perm => {
+        setNotificationPermission(perm);
+        if (perm === 'granted') {
+          new Notification('LifePilot Alerts Armed', {
+            body: 'You will receive exact desktop alerts when your scheduled tasks are due.',
+          });
+        }
+      });
+    }
   };
 
   const handleStatusChange = async (taskId: string, status: TaskStatus) => {
@@ -134,6 +168,18 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleQuickAlarm = async (title: string, minutes: number) => {
+    try {
+      await api.createQuickAlarm(title, minutes);
+      sound.playSuccess();
+      loadDaySchedule(currentDate);
+      const upcoming = await api.getUpcomingAlarm();
+      setUpcomingAlarm(upcoming);
+    } catch (e: any) {
+      alert(`Failed to arm quick alarm: ${e.message}`);
+    }
+  };
+
   const handleToggleSubtask = async (taskId: string, subtaskIndex: number) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task || !task.subtasks) return;
@@ -157,6 +203,8 @@ export const App: React.FC = () => {
       await api.sendAlarmAction(reminderId, action, minutes);
       setActiveAlarms(prev => prev.filter(a => a.id !== reminderId));
       loadDaySchedule(currentDate);
+      const upcoming = await api.getUpcomingAlarm();
+      setUpcomingAlarm(upcoming);
     } catch (e) {}
   };
 
@@ -178,6 +226,9 @@ export const App: React.FC = () => {
         onLock={handleLock}
         backendOnline={backendOnline}
         activeAlarmCount={activeAlarms.length}
+        upcomingAlarm={upcomingAlarm}
+        notificationPermission={notificationPermission}
+        onRequestNotificationPermission={handleRequestNotificationPermission}
       />
 
       {/* Main Content Area */}
@@ -193,6 +244,7 @@ export const App: React.FC = () => {
             onCreateTask={handleCreateTask}
             onOpenImport={() => setIsImportOpen(true)}
             onToggleSubtask={handleToggleSubtask}
+            onQuickAlarm={handleQuickAlarm}
           />
         )}
 
