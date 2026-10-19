@@ -31,9 +31,10 @@ async def seed_data():
         # Ensure master user exists
         await ensure_master_user(db)
 
-        # Clear existing templates & tasks for today
+        # Clear existing reminders, tasks & templates
+        await db.execute(delete(Reminder))
+        await db.execute(delete(Task))
         await db.execute(delete(RoutineTemplate))
-        await db.execute(delete(Task).where(Task.date == today))
         await db.commit()
 
         # Seed templates

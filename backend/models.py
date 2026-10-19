@@ -70,7 +70,7 @@ class Task(Base):
     status = Column(String(20), default="pending", nullable=False, index=True)  # pending, in_progress, completed, snoozed, cancelled
     priority = Column(String(20), default="medium", nullable=False)  # low, medium, high
     subtasks = Column(JSON, default=list, nullable=False)
-    routine_template_id = Column(String(36), ForeignKey("routine_templates.id"), nullable=True)
+    routine_template_id = Column(String(36), ForeignKey("routine_templates.id", ondelete="SET NULL"), nullable=True)
     is_reminder_enabled = Column(Boolean, default=True, nullable=False)
     completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
