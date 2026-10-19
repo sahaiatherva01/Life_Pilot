@@ -30,7 +30,8 @@ interface TodayTimelineProps {
   onCreateTask: (task: Partial<Task>) => void;
   onOpenImport: () => void;
   onToggleSubtask: (taskId: string, subtaskIndex: number) => void;
-  onQuickAlarm: (title: string, minutes: number) => void;
+  onQuickAlarm: (titleOrOptions: string | any, minutes?: number) => void;
+  onArmTaskAlarm?: (taskId: string, minutesFromNow?: number) => void;
 }
 
 const CATEGORY_COLORS: Record<Category, string> = {
@@ -54,12 +55,22 @@ export const TodayTimeline: React.FC<TodayTimelineProps> = ({
   onOpenImport,
   onToggleSubtask,
   onQuickAlarm,
+  onArmTaskAlarm,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showQuickAlarmModal, setShowQuickAlarmModal] = useState(false);
   const [quickAlarmTitle, setQuickAlarmTitle] = useState('');
   const [quickAlarmMinutes, setQuickAlarmMinutes] = useState(5);
+  const [quickAlarmMode, setQuickAlarmMode] = useState<'minutes' | 'exact'>('minutes');
+  const [quickAlarmExactTime, setQuickAlarmExactTime] = useState('');
+  const [quickAlarmCat, setQuickAlarmCat] = useState<Category>('Routine');
+
+  // Inline Quick Alarm bar state
+  const [inlineTitle, setInlineTitle] = useState('');
+  const [inlineMins, setInlineMins] = useState(5);
+  const [inlineCat, setInlineCat] = useState<Category>('Routine');
+
   const [rescheduleTask, setRescheduleTask] = useState<Task | null>(null);
   const [newStart, setNewStart] = useState('');
   const [newEnd, setNewEnd] = useState('');
@@ -108,6 +119,19 @@ export const TodayTimeline: React.FC<TodayTimelineProps> = ({
       });
     } catch (e) {}
     onStatusChange(taskId, 'completed');
+  };
+
+  const handleInlineAlarmSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inlineTitle.trim()) return;
+    onQuickAlarm({
+      title: inlineTitle.trim(),
+      minutes_from_now: inlineMins,
+      category: inlineCat,
+      priority: 'high',
+    });
+    setInlineTitle('');
+    sound.playSuccess();
   };
 
   const handleAddSubmit = (e: React.FormEvent) => {
@@ -249,6 +273,97 @@ export const TodayTimeline: React.FC<TodayTimelineProps> = ({
             <span>Add Task</span>
           </button>
         </div>
+      </div>
+
+      {/* Quick To-Do Alarm Bar */}
+      <div className="glass-panel" style={{
+        padding: '14px 20px',
+        marginBottom: '16px',
+        background: 'linear-gradient(90deg, rgba(255, 159, 67, 0.1) 0%, rgba(24, 27, 36, 0.85) 100%)',
+        border: '1px solid rgba(255, 159, 67, 0.35)',
+      }}>
+        <form onSubmit={handleInlineAlarmSubmit} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: '130px' }}>
+            <BellRing size={16} color="var(--neon-amber)" />
+            <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--neon-amber)', fontFamily: 'var(--font-mono)' }}>
+              ⚡ QUICK ALARM
+            </span>
+          </div>
+
+          <input
+            type="text"
+            required
+            placeholder="What to do? (e.g. Call client, 5 DSA problems, drink water)"
+            value={inlineTitle}
+            onChange={e => setInlineTitle(e.target.value)}
+            style={{
+              flex: 1,
+              minWidth: '220px',
+              padding: '9px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-subtle)',
+              background: 'rgba(0,0,0,0.5)',
+              color: 'var(--text-primary)',
+              fontSize: '0.88rem',
+            }}
+          />
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            {[2, 5, 15, 30].map(mins => (
+              <button
+                key={mins}
+                type="button"
+                onClick={() => { sound.playClick(); setInlineMins(mins); }}
+                style={{
+                  padding: '7px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  border: inlineMins === mins ? '1px solid var(--neon-amber)' : '1px solid var(--border-subtle)',
+                  background: inlineMins === mins ? 'rgba(255, 159, 67, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                  color: inlineMins === mins ? 'var(--neon-amber)' : 'var(--text-secondary)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                +{mins}m
+              </button>
+            ))}
+          </div>
+
+          <select
+            value={inlineCat}
+            onChange={e => setInlineCat(e.target.value as Category)}
+            style={{
+              padding: '8px 10px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-subtle)',
+              background: 'rgba(0,0,0,0.5)',
+              color: 'var(--text-secondary)',
+              fontSize: '0.8rem',
+            }}
+          >
+            {['Routine', 'Study', 'Fitness', 'Projects', 'Career', 'Skill'].map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+
+          <button
+            type="submit"
+            className="btn-primary"
+            style={{
+              padding: '8px 16px',
+              fontSize: '0.85rem',
+              background: 'linear-gradient(135deg, #FF9F43 0%, #FF5252 100%)',
+              color: '#05070B',
+              fontWeight: 800,
+              boxShadow: '0 0 15px rgba(255, 159, 67, 0.3)',
+            }}
+          >
+            <BellRing size={14} />
+            <span>Arm ({inlineMins}m)</span>
+          </button>
+        </form>
       </div>
 
       {/* Daily Progress Tracker Card */}
@@ -483,6 +598,29 @@ export const TodayTimeline: React.FC<TodayTimelineProps> = ({
 
                 {/* Right: Actions */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {onArmTaskAlarm && !isCompleted && (
+                    <button
+                      className="btn-secondary"
+                      onClick={() => {
+                        sound.playClick();
+                        onArmTaskAlarm(task.id, 2);
+                      }}
+                      style={{
+                        padding: '6px 9px',
+                        fontSize: '0.75rem',
+                        borderColor: 'rgba(255, 159, 67, 0.4)',
+                        color: 'var(--neon-amber)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                      title="Arm or ring alarm in 2 minutes for this task"
+                    >
+                      <BellRing size={13} color="var(--neon-amber)" />
+                      <span>+2m Alarm</span>
+                    </button>
+                  )}
+
                   {!isCompleted && (
                     <>
                       <button
@@ -828,7 +966,25 @@ export const TodayTimeline: React.FC<TodayTimelineProps> = ({
             <form onSubmit={e => {
               e.preventDefault();
               if (!quickAlarmTitle.trim()) return;
-              onQuickAlarm(quickAlarmTitle.trim(), quickAlarmMinutes);
+              if (quickAlarmMode === 'exact') {
+                if (!quickAlarmExactTime) {
+                  alert('Please enter a time for the alarm');
+                  return;
+                }
+                onQuickAlarm({
+                  title: quickAlarmTitle.trim(),
+                  exact_time: quickAlarmExactTime,
+                  category: quickAlarmCat,
+                  priority: 'high',
+                });
+              } else {
+                onQuickAlarm({
+                  title: quickAlarmTitle.trim(),
+                  minutes_from_now: quickAlarmMinutes,
+                  category: quickAlarmCat,
+                  priority: 'high',
+                });
+              }
               setQuickAlarmTitle('');
               setShowQuickAlarmModal(false);
             }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -854,31 +1010,115 @@ export const TodayTimeline: React.FC<TodayTimelineProps> = ({
                 />
               </div>
 
-              <div>
-                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '8px' }}>
-                  Ring Alarm In:
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
-                  {[2, 5, 10, 15, 30].map(mins => (
-                    <button
-                      key={mins}
-                      type="button"
-                      onClick={() => { sound.playClick(); setQuickAlarmMinutes(mins); }}
-                      style={{
-                        padding: '8px 4px',
-                        borderRadius: 'var(--radius-sm)',
-                        fontSize: '0.8rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        border: quickAlarmMinutes === mins ? '1px solid var(--neon-amber)' : '1px solid var(--border-subtle)',
-                        background: quickAlarmMinutes === mins ? 'rgba(255, 159, 67, 0.2)' : 'rgba(255, 255, 255, 0.04)',
-                        color: quickAlarmMinutes === mins ? 'var(--neon-amber)' : 'var(--text-secondary)',
-                      }}
-                    >
-                      {mins}m
-                    </button>
-                  ))}
+              {/* Mode switch */}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => { sound.playClick(); setQuickAlarmMode('minutes'); }}
+                  style={{
+                    flex: 1,
+                    padding: '7px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    border: quickAlarmMode === 'minutes' ? '1px solid var(--neon-amber)' : '1px solid var(--border-subtle)',
+                    background: quickAlarmMode === 'minutes' ? 'rgba(255, 159, 67, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                    color: quickAlarmMode === 'minutes' ? 'var(--neon-amber)' : 'var(--text-muted)',
+                  }}
+                >
+                  ⏱ In X Minutes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { sound.playClick(); setQuickAlarmMode('exact'); }}
+                  style={{
+                    flex: 1,
+                    padding: '7px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    border: quickAlarmMode === 'exact' ? '1px solid var(--neon-cyan)' : '1px solid var(--border-subtle)',
+                    background: quickAlarmMode === 'exact' ? 'rgba(0, 242, 254, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                    color: quickAlarmMode === 'exact' ? 'var(--neon-cyan)' : 'var(--text-muted)',
+                  }}
+                >
+                  🕒 Exact Time Today
+                </button>
+              </div>
+
+              {quickAlarmMode === 'minutes' ? (
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '8px' }}>
+                    Ring Alarm In:
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '5px' }}>
+                    {[1, 2, 5, 10, 15, 30, 60].map(mins => (
+                      <button
+                        key={mins}
+                        type="button"
+                        onClick={() => { sound.playClick(); setQuickAlarmMinutes(mins); }}
+                        style={{
+                          padding: '8px 2px',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          border: quickAlarmMinutes === mins ? '1px solid var(--neon-amber)' : '1px solid var(--border-subtle)',
+                          background: quickAlarmMinutes === mins ? 'rgba(255, 159, 67, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                          color: quickAlarmMinutes === mins ? 'var(--neon-amber)' : 'var(--text-secondary)',
+                          fontFamily: 'var(--font-mono)',
+                        }}
+                      >
+                        {mins}m
+                      </button>
+                    ))}
+                  </div>
                 </div>
+              ) : (
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                    Exact Alarm Time Today (24h)
+                  </label>
+                  <input
+                    type="time"
+                    required={quickAlarmMode === 'exact'}
+                    value={quickAlarmExactTime}
+                    onChange={e => setQuickAlarmExactTime(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--neon-cyan)',
+                      background: 'rgba(0,0,0,0.5)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'var(--font-mono)',
+                    }}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  Category
+                </label>
+                <select
+                  value={quickAlarmCat}
+                  onChange={e => setQuickAlarmCat(e.target.value as Category)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'rgba(0,0,0,0.5)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  {['Routine', 'Study', 'Fitness', 'Projects', 'Career', 'Skill'].map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
@@ -890,10 +1130,15 @@ export const TodayTimeline: React.FC<TodayTimelineProps> = ({
                     background: 'linear-gradient(135deg, #FF9F43 0%, #FF5252 100%)',
                     boxShadow: '0 0 20px rgba(255, 159, 67, 0.3)',
                     color: '#05070B',
+                    fontWeight: 800,
                   }}
                 >
                   <BellRing size={16} />
-                  <span>Arm Alarm ({quickAlarmMinutes}m)</span>
+                  <span>
+                    {quickAlarmMode === 'exact' 
+                      ? `Arm Alarm (${quickAlarmExactTime || 'Select Time'})`
+                      : `Arm Alarm (${quickAlarmMinutes}m)`}
+                  </span>
                 </button>
                 <button 
                   type="button" 

@@ -22,7 +22,7 @@ interface TopNavProps {
   onLock: () => void;
   backendOnline: boolean;
   activeAlarmCount: number;
-  upcomingAlarm?: { task_title: string; trigger_time: string; minutes_remaining: number } | null;
+  upcomingAlarm?: { task_title: string; trigger_time: string; seconds_remaining?: number; minutes_remaining: number; is_snoozed?: boolean } | null;
   onTestAlarm?: () => void;
   notificationPermission?: NotificationPermission;
   onRequestNotificationPermission?: () => void;
@@ -43,6 +43,8 @@ export const TopNav: React.FC<TopNavProps> = ({
   onRequestNotificationPermission,
 }) => {
   const [timeStr, setTimeStr] = useState<string>('');
+  const [countdownSecs, setCountdownSecs] = useState<number | null>(null);
+  const [isAudioMuted, setIsAudioMuted] = useState(sound.isMuted());
 
   useEffect(() => {
     const updateTime = () => {
@@ -61,6 +63,39 @@ export const TopNav: React.FC<TopNavProps> = ({
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Live second-by-second countdown for next upcoming alarm
+  useEffect(() => {
+    if (!upcomingAlarm) {
+      setCountdownSecs(null);
+      return;
+    }
+
+    const calcDiff = () => {
+      const target = new Date(upcomingAlarm.trigger_time).getTime();
+      const now = Date.now();
+      const diff = Math.max(0, Math.floor((target - now) / 1000));
+      setCountdownSecs(diff);
+    };
+
+    calcDiff();
+    const timer = setInterval(calcDiff, 1000);
+    return () => clearInterval(timer);
+  }, [upcomingAlarm?.trigger_time]);
+
+  const formatCountdown = (totalSecs: number) => {
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${mins}m ${secs.toString().padStart(2, '0')}s`;
+  };
+
+  const toggleSound = () => {
+    const muted = sound.toggleMute();
+    setIsAudioMuted(muted);
+    if (!muted) {
+      sound.playClick();
+    }
+  };
 
   return (
     <header className="glass-panel" style={{
@@ -163,43 +198,73 @@ export const TopNav: React.FC<TopNavProps> = ({
       </nav>
 
       {/* Right side Status & Clock */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         {/* Active Alarm Badge if ringing */}
         {activeAlarmCount > 0 && (
           <div className="alarm-pulsing" style={{
             background: 'rgba(255, 51, 102, 0.2)',
             border: '1px solid #FF3366',
             color: '#FF3366',
-            padding: '5px 10px',
+            padding: '5px 12px',
             borderRadius: 'var(--radius-full)',
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            fontSize: '0.75rem',
-            fontWeight: 700,
+            fontSize: '0.78rem',
+            fontWeight: 800,
+            boxShadow: '0 0 15px rgba(255, 51, 102, 0.4)',
           }}>
-            <BellRing size={14} />
+            <BellRing size={15} />
             <span>ALARM RINGING ({activeAlarmCount})</span>
           </div>
         )}
 
-        {/* Upcoming Alarm Countdown */}
+        {/* Upcoming Alarm Countdown with live seconds */}
         {upcomingAlarm && activeAlarmCount === 0 && (
           <div style={{
             background: 'rgba(0, 242, 254, 0.08)',
-            border: '1px solid rgba(0, 242, 254, 0.3)',
+            border: '1px solid rgba(0, 242, 254, 0.35)',
             color: 'var(--neon-cyan)',
-            padding: '5px 10px',
+            padding: '5px 12px',
             borderRadius: 'var(--radius-full)',
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            fontSize: '0.75rem',
+            fontSize: '0.78rem',
             fontFamily: 'var(--font-mono)',
           }}>
             <BellRing size={13} color="var(--neon-cyan)" />
-            <span>Next Alarm: {upcomingAlarm.minutes_remaining}m ({upcomingAlarm.task_title})</span>
+            <span>
+              {countdownSecs !== null
+                ? `Next: ${formatCountdown(countdownSecs)} (${upcomingAlarm.task_title})`
+                : `Next: ${upcomingAlarm.minutes_remaining}m (${upcomingAlarm.task_title})`}
+              {upcomingAlarm.is_snoozed ? ' [Snoozed]' : ''}
+            </span>
           </div>
+        )}
+
+        {/* Test Alarm Quick Button */}
+        {onTestAlarm && (
+          <button
+            onClick={() => { sound.playClick(); onTestAlarm(); }}
+            style={{
+              background: 'rgba(255, 51, 102, 0.12)',
+              border: '1px solid rgba(255, 51, 102, 0.4)',
+              color: '#FF3366',
+              borderRadius: 'var(--radius-full)',
+              padding: '5px 10px',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+            title="Fire an instant verification test alarm"
+          >
+            <BellRing size={12} />
+            <span>Test Alarm</span>
+          </button>
         )}
 
         {/* Notification Permission Request */}
@@ -225,6 +290,27 @@ export const TopNav: React.FC<TopNavProps> = ({
             <span>Enable Desktop Alerts</span>
           </button>
         )}
+
+        {/* Audio Mute quick toggle */}
+        <button
+          onClick={toggleSound}
+          style={{
+            background: isAudioMuted ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 242, 254, 0.1)',
+            border: isAudioMuted ? '1px solid var(--border-subtle)' : '1px solid rgba(0, 242, 254, 0.4)',
+            color: isAudioMuted ? 'var(--text-muted)' : 'var(--neon-cyan)',
+            borderRadius: '50%',
+            width: '34px',
+            height: '34px',
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+          title={isAudioMuted ? 'Sound is Muted (Click to unmute)' : 'Sound is Active (Click to mute)'}
+        >
+          {isAudioMuted ? '🔇' : '🔔'}
+        </button>
 
         {/* Live IST Clock */}
         <div style={{

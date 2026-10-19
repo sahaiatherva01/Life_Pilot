@@ -205,11 +205,34 @@ export const api = {
     });
   },
 
-  async createQuickAlarm(title: string, minutesFromNow: number = 5, category: string = 'Routine'): Promise<any> {
+  async createQuickAlarm(options: {
+    title: string;
+    minutes_from_now?: number;
+    exact_time?: string;
+    category?: string;
+    priority?: string;
+    notes?: string;
+  }): Promise<any> {
     return request('/api/reminders/quick', {
       method: 'POST',
-      body: JSON.stringify({ title, minutes_from_now: minutesFromNow, category }),
+      body: JSON.stringify({
+        title: options.title,
+        minutes_from_now: options.minutes_from_now,
+        exact_time: options.exact_time,
+        category: options.category || 'Routine',
+        priority: options.priority || 'high',
+        notes: options.notes,
+      }),
     });
+  },
+
+  async triggerTestAlarm(): Promise<any> {
+    return request('/api/reminders/test', { method: 'POST' });
+  },
+
+  async armTaskAlarm(taskId: string, minutesFromNow?: number): Promise<any> {
+    const params = minutesFromNow !== undefined ? `?minutes_from_now=${minutesFromNow}` : '';
+    return request(`/api/reminders/tasks/${taskId}/arm${params}`, { method: 'POST' });
   },
 
   async getUpcomingAlarm(): Promise<{
@@ -220,6 +243,7 @@ export const api = {
     trigger_time: string;
     seconds_remaining: number;
     minutes_remaining: number;
+    is_snoozed?: boolean;
   } | null> {
     return request('/api/reminders/upcoming');
   },

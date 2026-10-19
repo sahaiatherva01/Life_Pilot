@@ -168,15 +168,42 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleQuickAlarm = async (title: string, minutes: number) => {
+  const handleQuickAlarm = async (titleOrOptions: string | any, minutes: number = 5) => {
     try {
-      await api.createQuickAlarm(title, minutes);
+      if (typeof titleOrOptions === 'string') {
+        await api.createQuickAlarm({ title: titleOrOptions, minutes_from_now: minutes });
+      } else {
+        await api.createQuickAlarm(titleOrOptions);
+      }
       sound.playSuccess();
       loadDaySchedule(currentDate);
       const upcoming = await api.getUpcomingAlarm();
       setUpcomingAlarm(upcoming);
     } catch (e: any) {
       alert(`Failed to arm quick alarm: ${e.message}`);
+    }
+  };
+
+  const handleArmTaskAlarm = async (taskId: string, minutesFromNow?: number) => {
+    try {
+      await api.armTaskAlarm(taskId, minutesFromNow);
+      sound.playSuccess();
+      loadDaySchedule(currentDate);
+      const upcoming = await api.getUpcomingAlarm();
+      setUpcomingAlarm(upcoming);
+    } catch (e: any) {
+      alert(`Failed to arm alarm: ${e.message}`);
+    }
+  };
+
+  const handleTestAlarm = async () => {
+    try {
+      await api.triggerTestAlarm();
+      sound.playSuccess();
+      const alarms = await api.getActiveAlarms();
+      setActiveAlarms(alarms);
+    } catch (e: any) {
+      alert(`Failed to trigger test alarm: ${e.message}`);
     }
   };
 
@@ -227,6 +254,7 @@ export const App: React.FC = () => {
         backendOnline={backendOnline}
         activeAlarmCount={activeAlarms.length}
         upcomingAlarm={upcomingAlarm}
+        onTestAlarm={handleTestAlarm}
         notificationPermission={notificationPermission}
         onRequestNotificationPermission={handleRequestNotificationPermission}
       />
@@ -245,6 +273,7 @@ export const App: React.FC = () => {
             onOpenImport={() => setIsImportOpen(true)}
             onToggleSubtask={handleToggleSubtask}
             onQuickAlarm={handleQuickAlarm}
+            onArmTaskAlarm={handleArmTaskAlarm}
           />
         )}
 
@@ -268,6 +297,7 @@ export const App: React.FC = () => {
       {/* Persistent Alarm Ringing Modal */}
       <AlarmModal
         alarm={currentAlarm}
+        totalAlarms={activeAlarms.length}
         onAction={handleAlarmAction}
       />
 
