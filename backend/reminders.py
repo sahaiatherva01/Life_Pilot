@@ -287,8 +287,11 @@ async def force_trigger_briefing(
 
 class QuickAlarmRequest(BaseModel):
     title: str
-    minutes_from_now: int = 5
+    minutes_from_now: Optional[int] = None
+    exact_time: Optional[str] = None  # HH:MM
     category: str = "Routine"
+    priority: str = "high"
+    notes: Optional[str] = None
 
 
 @router.post("/quick")
@@ -297,23 +300,36 @@ async def create_quick_alarm(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Creates a quick To-Do task with an alarm scheduled X minutes from now."""
+    """Creates a quick To-Do task with an alarm scheduled X minutes from now or at an exact time today."""
     now = datetime.now()
-    trigger_dt = now + timedelta(minutes=req.minutes_from_now)
+
+    if req.exact_time:
+        try:
+            h, m = map(int, req.exact_time.strip().split(":"))
+            trigger_dt = datetime(now.year, now.month, now.day, h, m)
+            if trigger_dt < now - timedelta(minutes=1):
+                # If time has passed today, schedule for tomorrow
+                trigger_dt += timedelta(days=1)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid exact_time format. Use HH:MM (e.g. 15:30)")
+    else:
+        mins = req.minutes_from_now if req.minutes_from_now is not None else 5
+        trigger_dt = now + timedelta(minutes=mins)
+
     sh_str = trigger_dt.strftime("%H:%M")
     end_dt = trigger_dt + timedelta(minutes=30)
     eh_str = end_dt.strftime("%H:%M")
 
     task = Task(
         title=req.title,
-        description=f"Quick To-Do Alarm ({req.minutes_from_now}m timer)",
+        description=req.notes or f"Quick To-Do Alarm ({sh_str})",
         category=req.category,
         date=trigger_dt.date(),
         start_time=sh_str,
         end_time=eh_str,
         duration_minutes=30,
         status="pending",
-        priority="high",
+        priority=req.priority,
         subtasks=[],
         is_reminder_enabled=True,
     )
@@ -329,13 +345,115 @@ async def create_quick_alarm(
     db.add(reminder)
     await db.commit()
     await db.refresh(task)
+
+    diff_seconds = max(0, int((trigger_dt - now).total_seconds()))
     return {
         "status": "success",
         "task_id": task.id,
+        "reminder_id": reminder.id,
         "title": task.title,
         "trigger_time": trigger_dt.isoformat(),
         "start_time": sh_str,
-        "message": f"Alarm set for {sh_str} ({req.minutes_from_now} minutes from now).",
+        "seconds_remaining": diff_seconds,
+        "message": f"Alarm armed for {sh_str} ({round(diff_seconds / 60)} minutes from now).",
+    }
+
+
+@router.post("/test")
+async def trigger_test_alarm(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Instantly triggers a test alarm for UI, audio synthesis, and notification verification."""
+    now = datetime.now()
+    sh_str = now.strftime("%H:%M")
+    eh_str = (now + timedelta(minutes=15)).strftime("%H:%M")
+
+    task = Task(
+        title="🔔 LifePilot Test Alarm",
+        description="Verification alarm for audio synthesizer, notification, and Quix UI modal.",
+        category="Routine",
+        date=now.date(),
+        start_time=sh_str,
+        end_time=eh_str,
+        duration_minutes=15,
+        status="in_progress",
+        priority="high",
+        subtasks=[{"id": "t1", "title": "Check audio synth chime", "completed": True}, {"id": "t2", "title": "Verify snooze button", "completed": False}],
+        is_reminder_enabled=True,
+    )
+    db.add(task)
+    await db.flush()
+
+    reminder = Reminder(
+        task_id=task.id,
+        trigger_time=now,
+        repeat_interval_minutes=5,
+        status="fired",
+        last_fired_at=now,
+    )
+    db.add(reminder)
+    await db.commit()
+    await db.refresh(task)
+
+    return {
+        "status": "success",
+        "message": "Test alarm fired immediately!",
+        "reminder_id": reminder.id,
+        "task_id": task.id,
+        "title": task.title,
+    }
+
+
+@router.post("/tasks/{task_id}/arm")
+async def arm_task_alarm(
+    task_id: str,
+    minutes_from_now: Optional[int] = Query(None),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Arms or updates an alarm for an existing scheduled task."""
+    task = await db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    now = datetime.now()
+    if minutes_from_now is not None:
+        trigger_dt = now + timedelta(minutes=minutes_from_now)
+    else:
+        # Arm for task's scheduled start time
+        try:
+            h, m = map(int, task.start_time.split(":"))
+            trigger_dt = datetime(task.date.year, task.date.month, task.date.day, h, m)
+        except Exception:
+            trigger_dt = now + timedelta(minutes=5)
+
+    task.is_reminder_enabled = True
+
+    # Find existing reminder or create new one
+    stmt = select(Reminder).where(Reminder.task_id == task_id)
+    reminder = (await db.execute(stmt)).scalars().first()
+
+    if reminder:
+        reminder.trigger_time = trigger_dt
+        reminder.status = "pending"
+        reminder.snoozed_until = None
+    else:
+        reminder = Reminder(
+            task_id=task.id,
+            trigger_time=trigger_dt,
+            repeat_interval_minutes=5,
+            status="pending",
+        )
+        db.add(reminder)
+
+    await db.commit()
+    return {
+        "status": "success",
+        "task_id": task.id,
+        "task_title": task.title,
+        "trigger_time": trigger_dt.isoformat(),
+        "message": f"Alarm armed for '{task.title}' at {trigger_dt.strftime('%H:%M')}.",
     }
 
 
@@ -344,30 +462,45 @@ async def get_next_upcoming_alarm(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Returns the next scheduled alarm countdown details."""
+    """Returns the next scheduled alarm countdown details for pending or snoozed reminders."""
     now = datetime.now()
     stmt = (
         select(Reminder)
         .options(selectinload(Reminder.task))
         .where(
             Reminder.status.in_(["pending", "snoozed"]),
-            Reminder.trigger_time >= now - timedelta(minutes=1),
         )
-        .order_by(Reminder.trigger_time.asc())
-        .limit(1)
     )
     result = await db.execute(stmt)
-    next_reminder = result.scalars().first()
-    if not next_reminder or not next_reminder.task:
+    reminders = result.scalars().all()
+
+    upcoming_list = []
+    for r in reminders:
+        if not r.task or r.task.status in ["completed", "cancelled"]:
+            continue
+
+        # Effective trigger time
+        effective_time = r.snoozed_until if (r.status == "snoozed" and r.snoozed_until) else r.trigger_time
+        diff_seconds = int((effective_time - now).total_seconds())
+
+        # Include reminders due now or in the future (within 30 seconds buffer)
+        if diff_seconds >= -30:
+            upcoming_list.append((diff_seconds, effective_time, r))
+
+    if not upcoming_list:
         return None
 
-    diff_seconds = max(0, int((next_reminder.trigger_time - now).total_seconds()))
+    # Pick the one with the smallest countdown
+    upcoming_list.sort(key=lambda x: x[0])
+    best_diff, best_time, best_r = upcoming_list[0]
+
     return {
-        "id": next_reminder.id,
-        "task_id": next_reminder.task_id,
-        "task_title": next_reminder.task.title,
-        "task_category": next_reminder.task.category,
-        "trigger_time": next_reminder.trigger_time.isoformat(),
-        "seconds_remaining": diff_seconds,
-        "minutes_remaining": max(1, round(diff_seconds / 60)),
+        "id": best_r.id,
+        "task_id": best_r.task_id,
+        "task_title": best_r.task.title,
+        "task_category": best_r.task.category,
+        "trigger_time": best_time.isoformat(),
+        "seconds_remaining": max(0, best_diff),
+        "minutes_remaining": max(1, round(max(0, best_diff) / 60)),
+        "is_snoozed": best_r.status == "snoozed",
     }

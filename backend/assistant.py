@@ -102,6 +102,33 @@ ORION_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_quick_alarm",
+            "description": "Set a quick To-Do reminder or alarm in X minutes or at an exact time today.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Title of the task to be reminded of"},
+                    "minutes_from_now": {"type": "integer", "description": "Number of minutes from now to fire alarm (e.g. 5, 10, 30)"},
+                    "exact_time": {"type": "string", "description": "Exact time in HH:MM (24h) format (e.g. '17:30')"},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_upcoming_alarm",
+            "description": "Query the next scheduled alarm and countdown timer.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
 ]
 
 
@@ -240,16 +267,29 @@ async def execute_tool_call(tool_name: str, args: dict, db: AsyncSession) -> Tup
 
     elif tool_name == "set_quick_alarm":
         title = args.get("title", "Quick Task")
-        mins = int(args.get("minutes_from_now", 5))
+        exact_time = args.get("exact_time")
         now = datetime.now()
-        trigger_dt = now + timedelta(minutes=mins)
+
+        if exact_time:
+            try:
+                h, m = map(int, exact_time.strip().split(":"))
+                trigger_dt = datetime(now.year, now.month, now.day, h, m)
+                if trigger_dt < now - timedelta(minutes=1):
+                    trigger_dt += timedelta(days=1)
+            except Exception:
+                mins = int(args.get("minutes_from_now", 5))
+                trigger_dt = now + timedelta(minutes=mins)
+        else:
+            mins = int(args.get("minutes_from_now", 5))
+            trigger_dt = now + timedelta(minutes=mins)
+
         sh_str = trigger_dt.strftime("%H:%M")
         end_dt = trigger_dt + timedelta(minutes=30)
         eh_str = end_dt.strftime("%H:%M")
 
         task = Task(
             title=title,
-            description=f"Quick To-Do Alarm ({mins}m timer)",
+            description=f"Quick To-Do Alarm ({sh_str})",
             category="Routine",
             date=trigger_dt.date(),
             start_time=sh_str,
@@ -271,12 +311,73 @@ async def execute_tool_call(tool_name: str, args: dict, db: AsyncSession) -> Tup
         )
         db.add(reminder)
         await db.commit()
-        return f"Alarm armed! I will alert you at {sh_str} ({mins} mins from now) for '{title}'.", {
+        diff_mins = max(1, round((trigger_dt - now).total_seconds() / 60))
+        return f"Alarm armed! I will alert you at {sh_str} ({diff_mins} mins from now) for '{title}'.", {
             "tool": "set_quick_alarm",
             "task_id": task.id,
             "title": title,
             "alarm_time": sh_str,
         }
+
+    elif tool_name == "get_upcoming_alarm":
+        now = datetime.now()
+        stmt = (
+            select(Reminder)
+            .where(Reminder.status.in_(["pending", "snoozed"]))
+            .order_by(Reminder.trigger_time.asc())
+        )
+        reminders = (await db.execute(stmt)).scalars().all()
+        valid = []
+        for r in reminders:
+            eff_time = r.snoozed_until if (r.status == "snoozed" and r.snoozed_until) else r.trigger_time
+            diff_secs = int((eff_time - now).total_seconds())
+            if diff_secs >= -30:
+                valid.append((diff_secs, eff_time, r))
+
+        if not valid:
+            return "You have no active alarms pending right now.", {"tool": "get_upcoming_alarm", "found": False}
+
+        valid.sort(key=lambda x: x[0])
+        best_diff, best_time, best_r = valid[0]
+        t = await db.get(Task, best_r.task_id)
+        task_name = t.title if t else "Scheduled Task"
+        mins_rem = max(1, round(best_diff / 60))
+        return f"Your next alarm is '{task_name}' at {best_time.strftime('%H:%M')} (in {mins_rem} minutes).", {
+            "tool": "get_upcoming_alarm",
+            "task_title": task_name,
+            "alarm_time": best_time.strftime("%H:%M"),
+            "minutes_remaining": mins_rem,
+        }
+
+    elif tool_name == "test_alarm":
+        now = datetime.now()
+        sh_str = now.strftime("%H:%M")
+        task = Task(
+            title="🔔 LifePilot Test Alarm",
+            description="Verification test for audio synth and alarm modal.",
+            category="Routine",
+            date=now.date(),
+            start_time=sh_str,
+            end_time=sh_str,
+            duration_minutes=15,
+            status="in_progress",
+            priority="high",
+            subtasks=[],
+            is_reminder_enabled=True,
+        )
+        db.add(task)
+        await db.flush()
+
+        reminder = Reminder(
+            task_id=task.id,
+            trigger_time=now,
+            repeat_interval_minutes=5,
+            status="fired",
+            last_fired_at=now,
+        )
+        db.add(reminder)
+        await db.commit()
+        return "Test alarm triggered! The ringing modal and synthesizer should be sounding now.", {"tool": "test_alarm", "reminder_id": reminder.id}
 
     return "Command recognized but no handler found.", {}
 
@@ -295,8 +396,20 @@ def heuristic_intent_parser(prompt: str) -> Optional[Tuple[str, dict]]:
       - 'complete study' -> complete_task
       - 'delete cricket' -> delete_task
       - 'what is my schedule today' -> get_daily_summary
+      - 'set alarm in 5 minutes to stretch' -> set_quick_alarm
+      - 'alarm at 17:00 for tea' -> set_quick_alarm (exact_time)
+      - 'when is my next alarm' -> get_upcoming_alarm
+      - 'test alarm' -> test_alarm
     """
     clean = prompt.strip().lower()
+
+    # Test alarm intent
+    if any(k in clean for k in ["test alarm", "ring test", "sound alarm", "test chime"]):
+        return "test_alarm", {}
+
+    # Next alarm intent
+    if any(k in clean for k in ["next alarm", "upcoming alarm", "when is my alarm", "what alarm", "check alarm"]):
+        return "get_upcoming_alarm", {}
 
     # Reschedule / shift intent
     m = re.search(r"(?:shift|move|reschedule|change)\s+([a-zA-Z\s0-9]+?)\s+to\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)", clean)
@@ -329,7 +442,24 @@ def heuristic_intent_parser(prompt: str) -> Optional[Tuple[str, dict]]:
         task_name = m_del.group(1).strip()
         return "delete_task", {"task_title": task_name}
 
-    # Quick alarm intent: 'alarm in 5 mins to workout' or 'remind me in 10 minutes to drink water'
+    # Alarm at exact time: 'alarm at 17:30 for tea' or 'set alarm for 5 pm to call mom'
+    m_exact = re.search(r"(?:set\s+)?(?:alarm|remind\s+me)\s+(?:at|for)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s+(?:to|for)\s+([a-zA-Z\s0-9]+)", clean)
+    if m_exact:
+        time_raw = m_exact.group(1).strip()
+        task_name = m_exact.group(2).strip()
+        time_m = re.match(r"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$", time_raw)
+        if time_m:
+            hr = int(time_m.group(1))
+            mn = int(time_m.group(2)) if time_m.group(2) else 0
+            meridian = time_m.group(3)
+            if meridian == "pm" and hr < 12:
+                hr += 12
+            elif meridian == "am" and hr == 12:
+                hr = 0
+            formatted = f"{hr:02d}:{mn:02d}"
+            return "set_quick_alarm", {"title": task_name, "exact_time": formatted}
+
+    # Quick alarm in X minutes: 'alarm in 5 mins to workout' or 'remind me in 10 minutes to drink water'
     m_alarm = re.search(r"(?:set\s+)?(?:alarm|remind\s+me)\s+(?:in\s+)?(\d+)\s*(?:m|min|mins|minutes)\s+(?:to|for)\s+([a-zA-Z\s0-9]+)", clean)
     if m_alarm:
         minutes = int(m_alarm.group(1))

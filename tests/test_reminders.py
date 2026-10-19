@@ -48,3 +48,15 @@ async def test_quick_alarm_and_upcoming(client: AsyncClient, auth_headers: dict)
     upcoming = upcoming_res.json()
     assert upcoming is not None
     assert upcoming["task_title"] == "Test Quick Alarm"
+
+    # Test immediate alarm trigger
+    test_alarm_res = await client.post("/api/reminders/test", headers=auth_headers)
+    assert test_alarm_res.status_code == 200
+    assert test_alarm_res.json()["status"] == "success"
+
+    # Check active alarms now includes fired alarm
+    active_res = await client.get("/api/reminders/active", headers=auth_headers)
+    assert active_res.status_code == 200
+    active = active_res.json()
+    assert len(active) >= 1
+    assert any("Test Alarm" in a["task_title"] for a in active)
