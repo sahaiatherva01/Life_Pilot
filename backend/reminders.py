@@ -54,72 +54,86 @@ async def check_due_reminders():
             logger.error(f"Error checking due reminders: {e}")
 
 
-async def trigger_morning_briefing():
+async def _generate_morning(db: AsyncSession, today: date):
+    stmt = select(Task).where(Task.date == today).order_by(Task.start_time.asc())
+    tasks = (await db.execute(stmt)).scalars().all()
+
+    task_bullets = "\n".join([f"- **{t.start_time} - {t.end_time}**: {t.title} ({t.category})" for t in tasks])
+    if not task_bullets:
+        task_bullets = "No tasks currently scheduled. Open LifePilot to import your Guide.xlsx routine!"
+
+    briefing_text = (
+        f"# 🌅 Good Morning Atherva! Here is your plan for {today.strftime('%A, %d %B %Y')}:\n\n"
+        f"You have **{len(tasks)} tasks** scheduled today.\n\n"
+        f"{task_bullets}\n\n"
+        f"💡 *Remember: Momentum is built one block at a time. Let's make today count!*"
+    )
+
+    briefing = DailyBriefing(
+        date=today,
+        briefing_type="morning",
+        content=briefing_text,
+        key_focus=f"{len(tasks)} tasks scheduled",
+        status="delivered",
+    )
+    db.add(briefing)
+    await db.commit()
+    logger.info("7:00 AM Morning Briefing generated.")
+
+
+async def trigger_morning_briefing(db: Optional[AsyncSession] = None):
     """Generates the 7:00 AM daily briefing."""
     today = date.today()
-    async with AsyncSessionLocal() as db:
-        try:
-            stmt = select(Task).where(Task.date == today).order_by(Task.start_time.asc())
-            tasks = (await db.execute(stmt)).scalars().all()
-
-            task_bullets = "\n".join([f"- **{t.start_time} - {t.end_time}**: {t.title} ({t.category})" for t in tasks])
-            if not task_bullets:
-                task_bullets = "No tasks currently scheduled. Open LifePilot to import your Guide.xlsx routine!"
-
-            briefing_text = (
-                f"# 🌅 Good Morning Atherva! Here is your plan for {today.strftime('%A, %d %B %Y')}:\n\n"
-                f"You have **{len(tasks)} tasks** scheduled today.\n\n"
-                f"{task_bullets}\n\n"
-                f"💡 *Remember: Momentum is built one block at a time. Let's make today count!*"
-            )
-
-            briefing = DailyBriefing(
-                date=today,
-                briefing_type="morning",
-                content=briefing_text,
-                key_focus=f"{len(tasks)} tasks scheduled",
-                status="delivered",
-            )
-            db.add(briefing)
-            await db.commit()
-            logger.info("7:00 AM Morning Briefing generated.")
-        except Exception as e:
-            logger.error(f"Error generating morning briefing: {e}")
+    if db is not None:
+        await _generate_morning(db, today)
+    else:
+        async with AsyncSessionLocal() as session:
+            try:
+                await _generate_morning(session, today)
+            except Exception as e:
+                logger.error(f"Error generating morning briefing: {e}")
 
 
-async def trigger_night_briefing():
+async def _generate_night(db: AsyncSession, today: date):
+    tomorrow = today + timedelta(days=1)
+    stmt_today = select(Task).where(Task.date == today)
+    tasks_today = (await db.execute(stmt_today)).scalars().all()
+
+    completed = sum(1 for t in tasks_today if t.status == "completed")
+    total = len(tasks_today)
+    rate = round((completed / total * 100), 1) if total > 0 else 100.0
+
+    briefing_text = (
+        f"# 🌙 Day Review & Wind-down — {today.strftime('%A, %d %B %Y')}\n\n"
+        f"Great job wrapping up the day! Here is your daily score:\n"
+        f"- **Completed Tasks**: {completed}/{total} ({rate}% Adherence)\n\n"
+        f"Tomorrow's date is **{tomorrow.strftime('%A, %d %B')}**. "
+        f"Your morning routine will kick off at 06:00 AM sharp. Get a solid 7+ hours of sleep!"
+    )
+
+    briefing = DailyBriefing(
+        date=today,
+        briefing_type="night",
+        content=briefing_text,
+        key_focus=f"{rate}% adherence today",
+        status="delivered",
+    )
+    db.add(briefing)
+    await db.commit()
+    logger.info("11:30 PM Night Briefing generated.")
+
+
+async def trigger_night_briefing(db: Optional[AsyncSession] = None):
     """Generates the 11:30 PM night review and tomorrow prep briefing."""
     today = date.today()
-    tomorrow = today + timedelta(days=1)
-    async with AsyncSessionLocal() as db:
-        try:
-            stmt_today = select(Task).where(Task.date == today)
-            tasks_today = (await db.execute(stmt_today)).scalars().all()
-
-            completed = sum(1 for t in tasks_today if t.status == "completed")
-            total = len(tasks_today)
-            rate = round((completed / total * 100), 1) if total > 0 else 100.0
-
-            briefing_text = (
-                f"# 🌙 Day Review & Wind-down — {today.strftime('%A, %d %B %Y')}\n\n"
-                f"Great job wrapping up the day! Here is your daily score:\n"
-                f"- **Completed Tasks**: {completed}/{total} ({rate}% Adherence)\n\n"
-                f"Tomorrow's date is **{tomorrow.strftime('%A, %d %B')}**. "
-                f"Your morning routine will kick off at 06:00 AM sharp. Get a solid 7+ hours of sleep!"
-            )
-
-            briefing = DailyBriefing(
-                date=today,
-                briefing_type="night",
-                content=briefing_text,
-                key_focus=f"{rate}% adherence today",
-                status="delivered",
-            )
-            db.add(briefing)
-            await db.commit()
-            logger.info("11:30 PM Night Briefing generated.")
-        except Exception as e:
-            logger.error(f"Error generating night briefing: {e}")
+    if db is not None:
+        await _generate_night(db, today)
+    else:
+        async with AsyncSessionLocal() as session:
+            try:
+                await _generate_night(session, today)
+            except Exception as e:
+                logger.error(f"Error generating night briefing: {e}")
 
 
 def start_scheduler():
@@ -255,10 +269,11 @@ async def get_latest_briefing(
 async def force_trigger_briefing(
     briefing_type: str = Query("morning", pattern=r"^(morning|night)$"),
     current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Force trigger a briefing immediately for testing."""
     if briefing_type == "morning":
-        await trigger_morning_briefing()
+        await trigger_morning_briefing(db)
     else:
-        await trigger_night_briefing()
+        await trigger_night_briefing(db)
     return {"status": "success", "message": f"{briefing_type.capitalize()} briefing triggered successfully"}

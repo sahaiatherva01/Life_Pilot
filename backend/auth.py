@@ -5,6 +5,13 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 import hashlib
 import secrets
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.config import settings
+from backend.db import get_db
+from backend.models import UserConfig
+from backend.schemas import LoginRequest, PinChangeRequest, TokenResponse
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer(auto_error=False)
