@@ -3,6 +3,10 @@ import { useAuthStore } from './stores/authStore';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { AppDashboard } from './pages/AppDashboard';
+import { TodayScreen } from './pages/TodayScreen';
+import { CalendarScreen } from './pages/CalendarScreen';
+import { TasksScreen } from './pages/TasksScreen';
+import { ImportsScreen } from './pages/ImportsScreen';
 import { AppShell } from './components/layout/AppShell';
 
 export const App: React.FC = () => {
@@ -32,11 +36,27 @@ export const App: React.FC = () => {
     );
   }
 
+  const renderActiveScreen = () => {
+    switch (activeScreen) {
+      case 'today':
+        return <TodayScreen />;
+      case 'calendar':
+        return <CalendarScreen />;
+      case 'tasks':
+        return <TasksScreen />;
+      case 'imports':
+        return <ImportsScreen />;
+      default:
+        return <AppDashboard onNavigate={setActiveScreen} />;
+    }
+  };
+
   return (
     <AppShell activeScreen={activeScreen} onNavigate={setActiveScreen}>
-      <AppDashboard onNavigate={setActiveScreen} />
+      {renderActiveScreen()}
     </AppShell>
   );
 };
 
 export default App;
+

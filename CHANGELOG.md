@@ -5,6 +5,23 @@ All notable changes to the LifePilot × Orion project will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Phase 2: Life Data] - 2026-10-19
+
+### Added
+- **Core Life Data Domain Models:** SQLAlchemy 2 async models in `server/models.py` for `Task`, `Subtask`, `TaskDependency`, `RecurrenceRule`, `TaskOccurrence`, `TaskSchedule`, `TaskEvent`, `Import`, and `ImportRow`.
+- **Alembic Migration:** Database migration `migrations/versions/002_life_data_schema.py` creating tables, foreign keys, indexes, and cascades.
+- **Task Lifecycle & Subtasks Service:** `server/tasks.py` implementing task CRUD, atomic status transitions, subtask toggle, and audit logging into `TaskEvent`.
+- **30-Day Rolling Recurrence Engine:** `server/recurrence.py` supporting `daily`, `weekly`, `weekdays`, and `monthly` recurrence rules with deterministic occurrence keying (`recurrence_key`) for idempotency.
+- **Stdlib-Safe Calendar Aggregator:** `server/calendar_sync.py` unifying fixed commitments, flexible tasks, and sleep anchors without stdlib namespace collision.
+- **Formula-Safe Guide.xlsx Parser:** `server/imports.py` implementing ADR 019 normalization rules (chronological meridian inference, 0.5 bedtime anchor to 12:00 AM, point milestone handling, and compound task subtask decomposition).
+- **Life Data REST APIs:** `/api/v1/tasks`, `/api/v1/tasks/{id}`, `/api/v1/tasks/{id}/subtasks`, `/api/v1/calendar/events`, `/api/v1/imports/upload`, `/api/v1/imports/{id}`, and `/api/v1/imports/{id}/commit`.
+- **Frontend Screens:**
+  - **Today Screen (`TodayScreen.tsx`):** Real-time execution trajectory, IST timeline stream, routine completion progress metrics, and task action triggers.
+  - **Tasks Screen (`TasksScreen.tsx`):** Dual List View and Kanban Board View (Planned, In Progress, Completed), category filtering, subtask checklist drawer, and task creation modal.
+  - **Calendar Screen (`CalendarScreen.tsx`):** Bespoke Obsidian Grid across Day, Week, and Month modes, featuring color-coded policy badges and a Protected Commitment modal that prevents unintended moves of fixed routines.
+  - **Imports Review Screen (`ImportsScreen.tsx`):** Reviewable table displaying all 115 genuine activities parsed from `Guide.xlsx`, inline cell editing, category and date filters, and 1-click batch commit.
+- **Automated Verification:** 5/5 passing Pytest suites in 0.60s (`test_tasks.py`, `test_recurrence.py`, `test_imports.py`), clean Ruff linting, zero TypeScript errors (`npm run typecheck`), and successful Vite production build.
+
 ## [Phase 1: Foundation] - 2026-10-19
 
 ### Added
