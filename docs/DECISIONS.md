@@ -24,3 +24,4 @@ Every approved decision goes here with date, context, options considered and con
 | 018 | Cross-Agent Protocol: Strict Git commit and status hook across Claude Code and Antigravity | Approved |
 | 019 | Guide.xlsx Parsing: Chronological AM/PM inference, `0.5` = 12:00 AM bedtime, `+` split into subtasks, seeds routine template | Approved |
 | 020 | Phase 1 Tech Choices: Argon2id hashing, pyproject.toml with pip/venv, Guide.xlsx seed for landing page, Lucide React | Approved |
+| 021 | Phase 1 Foundation: Monorepo, @lifepilot/ui, FastAPI backend, landing page, and app shell approved | Approved |
