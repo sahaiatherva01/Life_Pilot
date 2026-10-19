@@ -183,6 +183,49 @@ export const TopNav: React.FC<TopNavProps> = ({
           </div>
         )}
 
+        {/* Upcoming Alarm Countdown */}
+        {upcomingAlarm && activeAlarmCount === 0 && (
+          <div style={{
+            background: 'rgba(0, 242, 254, 0.08)',
+            border: '1px solid rgba(0, 242, 254, 0.3)',
+            color: 'var(--neon-cyan)',
+            padding: '5px 10px',
+            borderRadius: 'var(--radius-full)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '0.75rem',
+            fontFamily: 'var(--font-mono)',
+          }}>
+            <BellRing size={13} color="var(--neon-cyan)" />
+            <span>Next Alarm: {upcomingAlarm.minutes_remaining}m ({upcomingAlarm.task_title})</span>
+          </div>
+        )}
+
+        {/* Notification Permission Request */}
+        {notificationPermission !== 'granted' && onRequestNotificationPermission && (
+          <button
+            onClick={() => { sound.playClick(); onRequestNotificationPermission(); }}
+            style={{
+              background: 'rgba(255, 159, 67, 0.15)',
+              border: '1px solid var(--neon-amber)',
+              color: 'var(--neon-amber)',
+              borderRadius: 'var(--radius-full)',
+              padding: '4px 10px',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+            title="Enable background desktop alarm notifications"
+          >
+            <BellRing size={12} />
+            <span>Enable Desktop Alerts</span>
+          </button>
+        )}
+
         {/* Live IST Clock */}
         <div style={{
           fontFamily: 'var(--font-mono)',
