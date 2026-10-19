@@ -25,3 +25,4 @@ Every approved decision goes here with date, context, options considered and con
 | 019 | Guide.xlsx Parsing: Chronological AM/PM inference, `0.5` = 12:00 AM bedtime, `+` split into subtasks, seeds routine template | Approved |
 | 020 | Phase 1 Tech Choices: Argon2id hashing, pyproject.toml with pip/venv, Guide.xlsx seed for landing page, Lucide React | Approved |
 | 021 | Phase 1 Foundation: Monorepo, @lifepilot/ui, FastAPI backend, landing page, and app shell approved | Approved |
+| 022 | Phase 2 Life Data Choices: Custom Calendar Grid, List+Kanban view, 30-day recurrence horizon, editable import review table, semantic Hinglish category mapper | Approved |
