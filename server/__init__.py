@@ -1,1 +1,0 @@
-# LifePilot server package
